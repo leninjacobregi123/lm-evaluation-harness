@@ -1101,7 +1101,7 @@ export default function App() {
                         {Object.keys(selectedResult.summary).map(taskKey => {
                           const taskMetrics = selectedResult.summary[taskKey];
                           return Object.keys(taskMetrics)
-                            .filter(m => !m.includes("_stderr"))
+                            .filter(m => !m.includes("_stderr") && m !== "name" && m !== "alias" && m !== "sample_len")
                             .map(metricKey => {
                               const val = taskMetrics[metricKey];
                               const isPct = ["acc", "exact_match", "f1", "bleu", "rouge", "pass"].some(k => metricKey.toLowerCase().includes(k));
@@ -1110,7 +1110,7 @@ export default function App() {
                                   <td className="task-cell">{taskKey}</td>
                                   <td>{metricKey}</td>
                                   <td className="score-cell">
-                                    {isPct ? `${(val * 100).toFixed(1)}%` : val.toFixed(2)}
+                                    {isPct ? `${(val * 100).toFixed(1)}%` : (typeof val === "number" ? val.toFixed(2) : val)}
                                   </td>
                                 </tr>
                               );
@@ -1129,14 +1129,14 @@ export default function App() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                       {Object.keys(selectedResult.summary).map(taskKey => {
                         const taskMetrics = selectedResult.summary[taskKey];
-                        const primaryMetric = Object.keys(taskMetrics).find(m => !m.includes("_stderr")) || "";
+                        const primaryMetric = Object.keys(taskMetrics).find(m => !m.includes("_stderr") && m !== "name" && m !== "alias" && m !== "sample_len" && typeof taskMetrics[m] === "number") || "";
                         const val = taskMetrics[primaryMetric] || 0;
                         const isPct = ["acc", "exact_match", "f1", "bleu", "rouge", "pass"].some(k => primaryMetric.toLowerCase().includes(k));
                         return (
                           <div key={taskKey} className="metric-bar-row">
                             <div className="metric-bar-header">
                               <span className="metric-bar-task">{taskKey} <span style={{ color: "var(--text-4)", fontSize: 11 }}>({primaryMetric})</span></span>
-                              <span className="metric-bar-val">{isPct ? `${(val * 100).toFixed(1)}%` : val.toFixed(2)}</span>
+                              <span className="metric-bar-val">{isPct ? `${(val * 100).toFixed(1)}%` : (typeof val === "number" ? val.toFixed(2) : val)}</span>
                             </div>
                             {isPct && (
                               <div className="metric-bar-track">

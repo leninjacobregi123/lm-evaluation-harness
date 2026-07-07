@@ -26,8 +26,8 @@ export default function LeaderboardChart({ resultsList, selectedResult, calculat
         metricName = "Average Accuracy";
       } else if (run.summary[selectedTask]) {
         const taskMetrics = run.summary[selectedTask];
-        const primaryMetric = Object.keys(taskMetrics).find(m => !m.includes("_stderr")) || "";
-        score = taskMetrics[primaryMetric];
+        const primaryMetric = Object.keys(taskMetrics).find(m => !m.includes("_stderr") && m !== "name" && m !== "alias" && m !== "sample_len" && typeof taskMetrics[m] === "number") || "";
+        score = typeof taskMetrics[primaryMetric] === "number" ? taskMetrics[primaryMetric] : null;
         metricName = primaryMetric;
       }
 
