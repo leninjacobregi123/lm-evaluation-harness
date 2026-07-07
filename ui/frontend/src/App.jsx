@@ -12,6 +12,7 @@ import TaskTypeBadge from "./components/TaskTypeBadge";
 import TaskPicker from "./components/TaskPicker";
 import ModelConfigPanel from "./components/ModelConfigPanel";
 import CLIPreviewCard from "./components/CLIPreviewCard";
+import LeaderboardChart from "./components/LeaderboardChart";
 
 /* ────────────────────────────────────────────────────────── */
 /*  MAIN APP                                                    */
@@ -1150,6 +1151,13 @@ export default function App() {
                       })}
                     </div>
                   </div>
+
+                  {/* Leaderboard Chart */}
+                  <LeaderboardChart 
+                    resultsList={resultsList}
+                    selectedResult={selectedResult}
+                    calculateAverageScore={calculateAverageScore}
+                  />
 
                   {/* Telemetry panel */}
                   {selectedResult.pipeline_details?.telemetry && (
