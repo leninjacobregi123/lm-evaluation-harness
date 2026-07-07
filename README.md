@@ -60,6 +60,41 @@ This project provides a unified framework to test generative language models on 
 
 The Language Model Evaluation Harness is the backend for 🤗 Hugging Face's popular [Open LLM Leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard), has been used in [hundreds of papers](https://scholar.google.com/scholar?oi=bibs&hl=en&authuser=2&cites=15052937328817631261,4097184744846514103,1520777361382155671,17476825572045927382,18443729326628441434,14801318227356878622,7890865700763267262,12854182577605049984,15641002901115500560,5104500764547628290), and is used internally by dozens of organizations including NVIDIA, Cohere, BigScience, BigCode, Nous Research, and Mosaic ML.
 
+---
+
+## Web UI Dashboard & Multi-Run Pipeline
+
+This repository includes a custom Web UI Dashboard and a Multi-Run Benchmarking Pipeline wrapper. It lets you visually configure evaluation parameters, select benchmark tasks, view output logs in real-time, collect response latency telemetry, and inspect correct/incorrect answers side-by-side.
+
+### Quick Start (Launch UI)
+
+To launch both the FastAPI backend server (port 8000) and the React Vite development server (port 5173) concurrently, run:
+
+```bash
+chmod +x start_ui.sh
+./start_ui.sh
+```
+
+- **Web UI Interface:** Open [http://localhost:5173](http://localhost:5173) in your browser.
+- **Backend API Docs:** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) to view Swagger documentation.
+
+### Modular Architecture Layout
+
+Our added UI code is decoupled from the main benchmark harness and organized following industry standards:
+
+- **Frontend (`ui/frontend/`)**: Built on React & Vite. Reusable views are split into isolated files under [ui/frontend/src/components/](file:///home/lenin/Apps%20Developed/lm-evaluation-harness/ui/frontend/src/components/):
+  - `TaskPicker.jsx` — Multi-category search and popular selection buttons.
+  - `ModelConfigPanel.jsx` — Inference backend and Ollama/local model options.
+  - `CLIPreviewCard.jsx` — Dynamic CLI equivalent syntax generation.
+- **Backend (`ui/backend/`)**: Built with FastAPI. Business logic is organized in the package [ui/backend/app/](file:///home/lenin/Apps%20Developed/lm-evaluation-harness/ui/backend/app/):
+  - `config.py` — Constants, allowed CORS origins, and system path mappings.
+  - `models/eval.py` — Schema validation (`EvalRequest` class).
+  - `services/process.py` — Background thread monitoring and real-time SSE logging stream.
+  - `services/results.py` — Directory walker and `.json`/`.jsonl` data loader.
+  - `routers/` — Dedicated routers for `/api/eval`, `/api/models`, `/api/results`, and `/api/tasks`.
+
+---
+
 ## Install
 
 To install the `lm-eval` package from the github repository, run:
