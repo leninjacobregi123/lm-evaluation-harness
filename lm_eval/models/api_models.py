@@ -167,6 +167,14 @@ class TemplateAPI(TemplateLM):
         **kwargs,
     ) -> None:
         super().__init__()
+        def to_bool(val):
+            if isinstance(val, str):
+                return val.lower() in ("true", "1", "yes")
+            return bool(val)
+
+        trust_remote_code = to_bool(trust_remote_code)
+        use_fast_tokenizer = to_bool(use_fast_tokenizer)
+
         missing_packages = [
             pkg
             for pkg in ["aiohttp", "tqdm", "tenacity", "requests"]
@@ -190,7 +198,7 @@ class TemplateAPI(TemplateLM):
                 "Batch size > 1 detected. Ensure your API supports batched requests with varying total sequence lengths."
             )
         self._batch_size = int(batch_size) if batch_size != "auto" else 1
-        self._truncate = truncate
+        self._truncate = to_bool(truncate)
         self._max_gen_toks = int(max_gen_toks)
         self._seed = int(seed)
         # max_length - 1 as we always have 1 token for generation
@@ -204,11 +212,11 @@ class TemplateAPI(TemplateLM):
         self.tokenizer_backend = (
             None if tokenizer_backend in ("None", "none") else tokenizer_backend
         )
-        self.add_bos_token = add_bos_token
+        self.add_bos_token = to_bool(add_bos_token)
         self.custom_prefix_token_id = custom_prefix_token_id
-        self.tokenized_requests = tokenized_requests
+        self.tokenized_requests = to_bool(tokenized_requests)
         self.max_retries = int(max_retries)
-        self.verify_certificate = verify_certificate
+        self.verify_certificate = to_bool(verify_certificate)
         self.ca_cert_path = ca_cert_path
         self.auth_token = auth_token
         self._eos_string = eos_string
