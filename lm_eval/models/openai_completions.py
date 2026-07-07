@@ -67,6 +67,10 @@ class LocalCompletionsAPI(TemplateAPI):
         eos=None,
         **kwargs,
     ) -> dict:
+        # Unpack single-item lists/tuples for completions backends (like Ollama) that expect string prompts
+        while isinstance(messages, (list, tuple)) and len(messages) == 1:
+            messages = messages[0]
+
         if generate:
             gen_kwargs.pop("do_sample", False)
             if "max_tokens" in gen_kwargs:
