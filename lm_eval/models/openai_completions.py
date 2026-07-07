@@ -71,6 +71,27 @@ class LocalCompletionsAPI(TemplateAPI):
         while isinstance(messages, (list, tuple)) and len(messages) == 1:
             messages = messages[0]
 
+        # Extract content if messages is a single chat dict
+        if isinstance(messages, dict):
+            messages = messages.get("content", "")
+
+        # Format lists of chat dicts to plain string prompts
+        if isinstance(messages, list) and all(isinstance(m, dict) for m in messages):
+            formatted_prompt = ""
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if len(messages) == 1 and role == "user":
+                    formatted_prompt = content
+                else:
+                    if role == "user":
+                        formatted_prompt += f"User: {content}\n"
+                    elif role == "assistant":
+                        formatted_prompt += f"Assistant: {content}\n"
+                    else:
+                        formatted_prompt += f"{role.capitalize()}: {content}\n"
+            messages = formatted_prompt
+
         if generate:
             gen_kwargs.pop("do_sample", False)
             if "max_tokens" in gen_kwargs:
