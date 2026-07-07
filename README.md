@@ -1,4 +1,9 @@
-# Language Model Evaluation Harness
+# Language Model Evaluation Harness (with Custom Web UI Dashboard)
+
+> [!NOTE]
+> This repository is built on top of the original [EleutherAI/lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) engine. It includes a custom **Web UI Dashboard & Multi-Run Pipeline** wrapper to visual-configure, run, and analyze benchmarks for Ollama and API-based models. All credit for the core evaluation suite goes to **EleutherAI** and its contributors.
+
+---
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10256836.svg)](https://doi.org/10.5281/zenodo.10256836)
 

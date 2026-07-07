@@ -48,3 +48,10 @@ examples/wandb/
 
 #uv
 uv.lock
+
+# Telemetry and credentials
+pipeline_results/
+eval_results/
+apikey
+college key
+

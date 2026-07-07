@@ -34,6 +34,24 @@ except ModuleNotFoundError:
 import base64
 from importlib.util import find_spec
 from io import BytesIO
+import time
+import atexit
+
+# Performance and latency telemetry registry
+API_TELEMETRY = []
+
+def save_telemetry_at_exit():
+    telemetry_path = os.environ.get("LMEVAL_TELEMETRY_PATH")
+    if telemetry_path and API_TELEMETRY:
+        try:
+            os.makedirs(os.path.dirname(telemetry_path), exist_ok=True)
+            with open(telemetry_path, "w") as f:
+                json.dump(API_TELEMETRY, f, indent=2)
+            logging.getLogger(__name__).info(f"Telemetry saved successfully to {telemetry_path} (recorded {len(API_TELEMETRY)} requests)")
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Failed to save telemetry logs to {telemetry_path}: {e}")
+
+atexit.register(save_telemetry_at_exit)
 
 from lm_eval import utils
 from lm_eval.api.instance import Instance
@@ -463,26 +481,145 @@ class TemplateAPI(TemplateLM):
     ) -> Optional[dict]:
         # !!! Copy: shared dict for each request, need new object !!!
         gen_kwargs = copy.deepcopy(gen_kwargs)
+        payload = self._create_payload(
+            self.create_message(messages),
+            generate=generate,
+            gen_kwargs=gen_kwargs,
+            seed=self._seed,
+            eos=self.eos_string,
+            **kwargs,
+        )
+
+        is_generate = generate
+        stream_enabled = False
+        if is_generate and os.environ.get("LMEVAL_ENABLE_STREAMING", "1") == "1":
+            prompt = payload.get("prompt")
+            msgs = payload.get("messages")
+            if isinstance(prompt, str):
+                stream_enabled = True
+            elif isinstance(msgs, list):
+                if msgs and isinstance(msgs[0], dict):
+                    stream_enabled = True
+
+        if stream_enabled:
+            payload["stream"] = True
+
+        request_start = time.time()
+        ttft = None
+        trt = None
+        outputs = None
+
         try:
-            response = requests.post(
-                self.base_url,
-                json=self._create_payload(
-                    self.create_message(messages),
-                    generate=generate,
-                    gen_kwargs=gen_kwargs,
-                    seed=self._seed,
-                    eos=self.eos_string,
-                    **kwargs,
-                ),
-                headers=self.header,
-                verify=self.verify_certificate,
-            )
-            if not response.ok:
-                eval_logger.warning(
-                    f"API request failed with error message: {response.text}. Retrying..."
+            if stream_enabled:
+                response = requests.post(
+                    self.base_url,
+                    json=payload,
+                    headers=self.header,
+                    verify=self.verify_certificate,
+                    stream=True
                 )
-            response.raise_for_status()
-            return response.json()
+                if not response.ok:
+                    eval_logger.warning(
+                        f"API request failed! Status code: {response.status_code}, Response text: {response.text}. Retrying..."
+                    )
+                response.raise_for_status()
+
+                full_text = []
+                for line in response.iter_lines():
+                    if line:
+                        line_str = line.decode("utf-8").strip()
+                        if line_str.startswith("data: "):
+                            data_str = line_str[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                choices = chunk.get("choices", [])
+                                if choices:
+                                    choice = choices[0]
+                                    text = choice.get("text", "") or choice.get("delta", {}).get("content", "")
+                                    if text:
+                                        full_text.append(text)
+                                        if ttft is None:
+                                            ttft = time.time() - request_start
+                            except json.JSONDecodeError:
+                                pass
+                
+                trt = time.time() - request_start
+                if ttft is None:
+                    ttft = trt
+                
+                text_content = "".join(full_text)
+                outputs = {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "text": text_content,
+                            "message": {
+                                "role": "assistant",
+                                "content": text_content
+                            }
+                        }
+                    ]
+                }
+            else:
+                response = requests.post(
+                    self.base_url,
+                    json=payload,
+                    headers=self.header,
+                    verify=self.verify_certificate,
+                )
+                if not response.ok:
+                    eval_logger.warning(
+                        f"API request failed with error message: {response.text}. Retrying..."
+                    )
+                response.raise_for_status()
+                outputs = response.json()
+                trt = time.time() - request_start
+                ttft = trt
+
+            # Record telemetry metrics
+            try:
+                # 1. Prompt tokens
+                prompt_tokens = 0
+                prompt_input = payload.get("prompt")
+                msgs_input = payload.get("messages")
+                if isinstance(prompt_input, str):
+                    prompt_tokens = len(self.tok_encode(prompt_input))
+                elif isinstance(prompt_input, list):
+                    if prompt_input and isinstance(prompt_input[0], int):
+                        prompt_tokens = len(prompt_input)
+                elif isinstance(msgs_input, list):
+                    prompt_tokens = sum(len(self.tok_encode(m.get("content", ""))) for m in msgs_input if isinstance(m, dict))
+
+                # 2. Completion tokens
+                completion_tokens = 0
+                parsed_answers = self.parse_generations(outputs=outputs) if generate else []
+                if parsed_answers and parsed_answers[0] is not None:
+                    completion_tokens = len(self.tok_encode(str(parsed_answers[0])))
+                if completion_tokens == 0:
+                    completion_tokens = 1
+
+                # Calculate ITL and throughput
+                itl = (trt - ttft) / (completion_tokens - 1) if stream_enabled and completion_tokens > 1 else 0
+                if not stream_enabled:
+                    itl = trt / completion_tokens
+                throughput = completion_tokens / trt if trt > 0 else 0
+
+                API_TELEMETRY.append({
+                    "timestamp": time.time(),
+                    "type": "generate" if generate else "loglikelihood",
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "trt": trt,
+                    "ttft": ttft,
+                    "itl": itl,
+                    "throughput": throughput
+                })
+            except Exception as tel_err:
+                eval_logger.warning(f"Telemetry logging failed: {tel_err}")
+
+            return outputs
         except RetryError:
             eval_logger.error(
                 "API request failed after multiple retries. Please check the API status."
@@ -513,6 +650,25 @@ class TemplateAPI(TemplateLM):
         cache_method = "generate_until" if generate else "loglikelihood"
         acquired = await sem.acquire()
         try:
+            # Determine if streaming is supported and appropriate
+            is_generate = generate
+            stream_enabled = False
+            if is_generate and os.environ.get("LMEVAL_ENABLE_STREAMING", "1") == "1":
+                prompt = payload.get("prompt")
+                msgs = payload.get("messages")
+                if isinstance(prompt, str):
+                    stream_enabled = True
+                elif isinstance(msgs, list):
+                    if msgs and isinstance(msgs[0], dict):
+                        stream_enabled = True
+
+            if stream_enabled:
+                payload["stream"] = True
+
+            request_start = time.time()
+            ttft = None
+            trt = None
+
             async with session.post(
                 self.base_url,
                 json=payload,
@@ -524,9 +680,53 @@ class TemplateAPI(TemplateLM):
                         f"API request failed! Status code: {response.status}, "
                         f"Response text: {error_text}. Retrying..."
                     )
-                # raising exception will retry the request
                 response.raise_for_status()
-                outputs = await response.json()
+
+                if stream_enabled:
+                    full_text = []
+                    async for line in response.content:
+                        line_str = line.decode("utf-8").strip()
+                        if not line_str:
+                            continue
+                        if line_str.startswith("data: "):
+                            data_str = line_str[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                choices = chunk.get("choices", [])
+                                if choices:
+                                    choice = choices[0]
+                                    text = choice.get("text", "") or choice.get("delta", {}).get("content", "")
+                                    if text:
+                                        full_text.append(text)
+                                        if ttft is None:
+                                            ttft = time.time() - request_start
+                            except json.JSONDecodeError:
+                                pass
+                    
+                    trt = time.time() - request_start
+                    if ttft is None:
+                        ttft = trt
+                    
+                    text_content = "".join(full_text)
+                    outputs = {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "text": text_content,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": text_content
+                                }
+                            }
+                        ]
+                    }
+                else:
+                    outputs = await response.json()
+                    trt = time.time() - request_start
+                    ttft = trt
+
             tmp_answers = (
                 self.parse_generations(
                     outputs=outputs,
@@ -538,6 +738,47 @@ class TemplateAPI(TemplateLM):
                     ctxlens=ctxlens,
                 )
             )
+
+            # Record telemetry metrics
+            try:
+                # 1. Prompt tokens
+                prompt_tokens = 0
+                prompt_input = payload.get("prompt")
+                msgs_input = payload.get("messages")
+                if isinstance(prompt_input, str):
+                    prompt_tokens = len(self.tok_encode(prompt_input))
+                elif isinstance(prompt_input, list):
+                    if prompt_input and isinstance(prompt_input[0], int):
+                        prompt_tokens = len(prompt_input)
+                elif isinstance(msgs_input, list):
+                    prompt_tokens = sum(len(self.tok_encode(m.get("content", ""))) for m in msgs_input if isinstance(m, dict))
+
+                # 2. Completion tokens
+                completion_tokens = 0
+                if tmp_answers and tmp_answers[0] is not None:
+                    completion_tokens = len(self.tok_encode(str(tmp_answers[0])))
+                if completion_tokens == 0:
+                    completion_tokens = 1 # Avoid division by zero
+
+                # Calculate ITL and throughput
+                itl = (trt - ttft) / (completion_tokens - 1) if stream_enabled and completion_tokens > 1 else 0
+                if not stream_enabled:
+                    itl = trt / completion_tokens
+                throughput = completion_tokens / trt if trt > 0 else 0
+
+                API_TELEMETRY.append({
+                    "timestamp": time.time(),
+                    "type": "generate" if generate else "loglikelihood",
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "trt": trt,
+                    "ttft": ttft,
+                    "itl": itl,
+                    "throughput": throughput
+                })
+            except Exception as tel_err:
+                # Keep evaluation running even if telemetry fails
+                eval_logger.warning(f"Telemetry logging failed: {tel_err}")
 
             # Convert `None`` values to `LMEVAL_MODEL_NONE_ANSWER_PLACEHOLDER` string to maintain consistency
             answers = []
