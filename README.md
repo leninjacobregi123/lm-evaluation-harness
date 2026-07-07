@@ -93,7 +93,22 @@ Our added UI code is decoupled from the main benchmark harness and organized fol
   - `services/results.py` — Directory walker and `.json`/`.jsonl` data loader.
   - `routers/` — Dedicated routers for `/api/eval`, `/api/models`, `/api/results`, and `/api/tasks`.
 
+### Key Custom Integration Features
+
+This custom fork introduces several industry-grade additions to the core evaluation suite:
+
+1. **Recursive Directory Traversal**: Implemented OS directory tree walking in the backend. This allows deeply nested evaluation folders (e.g., `eval_results/run_<uuid>/<model_name>/`) to be indexed and listed cleanly in the directory history without flattening file structures.
+2. **Deep JSONL Sample Parsing & Association**: Built file-handling parser logic that reads and decodes line-by-line `.jsonl` evaluation logs. Sibling json files (metadata) are automatically paired with their corresponding sample logs to map questions, target answers, and model completions in the inspector view.
+3. **Response Latency Telemetry & Profiling**: Instrumented streaming and completion wrappers inside the core `TemplateAPI` module ([lm_eval/models/api_models.py](file:///home/lenin/Apps%20Developed/lm-evaluation-harness/lm_eval/models/api_models.py)) to profile:
+   - **TTFT** (Time to First Token)
+   - **ITL** (Inter-Token Latency)
+   - **TRT** (Total Response Time)
+   - **Token Throughput** (tokens generated per second)
+   This telemetry parses token metrics in real-time and renders them as performance profile cards.
+4. **Subprocess Management & Log Streaming**: Integrated a background thread worker manager to run tests asynchronously. Console output is captured line-by-line and piped to the UI terminal wrapper via Server-Sent Events (SSE), preventing buffer blocks and supporting run cancellation.
+
 ---
+
 
 ## Install
 
