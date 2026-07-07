@@ -99,39 +99,6 @@ Our added UI code is decoupled from the main benchmark harness and organized fol
 <img width="5700" height="1576" alt="Blank diagram (6)" src="https://github.com/user-attachments/assets/ac76d9a9-258d-447a-a36e-5b41ed26797b" />
 
 
-#### 2. Evaluation Lifecycle Flow
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User Interface
-    participant BE as FastAPI Backend
-    participant Runner as Subprocess Runner
-    participant Core as api_models.py (Telemetry)
-    participant FS as Results Directory
-    
-    User->>BE: POST /api/eval/start (config, tasks, keys)
-    BE->>Runner: Spawn subprocess (lm-eval CLI)
-    BE-->>User: Return run_id
-    User->>BE: GET /api/eval/stream/{run_id} (Open SSE Channel)
-    
-    loop Benchmark Execution
-        Runner->>Core: Fetch benchmark inputs
-        Core->>Core: Measure TTFT, ITL, TRT
-        Core-->>Runner: Return generated answers
-        Runner-->>BE: Stream stdout/stderr line
-        BE-->>User: Push live console logs (SSE)
-    end
-    
-    Runner->>FS: Save results.json & samples.jsonl
-    Runner->>BE: Process exits (exit code 0)
-    BE-->>User: SSE close (status completed)
-    
-    Note over User,FS: Later Analysis
-    User->>BE: GET /api/results
-    BE->>FS: Walk directories & load summaries
-    FS-->>BE: Return metadata
-    BE-->>User: Render run history list & telemetry charts
-```
 
 ### Key Custom Integration Features
 
