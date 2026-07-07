@@ -93,6 +93,82 @@ Our added UI code is decoupled from the main benchmark harness and organized fol
   - `services/results.py` — Directory walker and `.json`/`.jsonl` data loader.
   - `routers/` — Dedicated routers for `/api/eval`, `/api/models`, `/api/results`, and `/api/tasks`.
 
+### System Architecture & Workflow
+
+#### 1. Component Architecture
+```mermaid
+graph TD
+    subgraph Frontend [React Frontend - Port 5173]
+        App[App.jsx Shell] --> UI_Comp[Modular Components]
+        UI_Comp --> TaskPicker[TaskPicker.jsx]
+        UI_Comp --> ModelConfig[ModelConfigPanel.jsx]
+        UI_Comp --> CLIPreview[CLIPreviewCard.jsx]
+        App --> States[Dashboard State]
+    end
+
+    subgraph Backend [FastAPI Backend - Port 8000]
+        API[main.py Entrypoint] --> Routers[Routers]
+        Routers --> EvalRouter[routers/eval.py]
+        Routers --> ResultsRouter[routers/results.py]
+        Routers --> ModelsRouter[routers/models.py]
+        
+        EvalRouter --> ProcSvc[services/process.py - ProcessManager]
+        ResultsRouter --> ResSvc[services/results.py - ResultsService]
+        
+        Config[config.py] -.-> API
+    end
+
+    subgraph Subprocess [Subprocess Execution]
+        ProcSvc -->|Spawn subprocess| Sub[venv/bin/python -m lm_eval]
+        Sub -->|Stream stdout/stderr| ProcSvc
+        Sub -->|Generate results & logs| OutDir[eval_results/run_ID/]
+    end
+
+    subgraph Core_Harness [Core Evaluation Suite]
+        Sub -->|Call model APIs| API_Models[lm_eval/models/api_models.py]
+        API_Models -->|Streaming / HTTP| LLM_Provider[Ollama / OpenAI / HF]
+        API_Models -->|Capture TTFT, ITL, TRT| Telemetry[API_TELEMETRY]
+        Telemetry -->|Written to JSON| OutDir
+    end
+
+    App <-->|HTTP Requests / SSE Logs| API
+    ResSvc -->|Recursive walking & JSONL parse| OutDir
+```
+
+#### 2. Evaluation Lifecycle Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User Interface
+    participant BE as FastAPI Backend
+    participant Runner as Subprocess Runner
+    participant Core as api_models.py (Telemetry)
+    participant FS as Results Directory
+    
+    User->>BE: POST /api/eval/start (config, tasks, keys)
+    BE->>Runner: Spawn subprocess (lm-eval CLI)
+    BE-->>User: Return run_id
+    User->>BE: GET /api/eval/stream/{run_id} (Open SSE Channel)
+    
+    loop Benchmark Execution
+        Runner->>Core: Fetch benchmark inputs
+        Core->>Core: Measure TTFT, ITL, TRT
+        Core-->>Runner: Return generated answers
+        Runner-->>BE: Stream stdout/stderr line
+        BE-->>User: Push live console logs (SSE)
+    end
+    
+    Runner->>FS: Save results.json & samples.jsonl
+    Runner->>BE: Process exits (exit code 0)
+    BE-->>User: SSE close (status completed)
+    
+    Note over User,FS: Later Analysis
+    User->>BE: GET /api/results
+    BE->>FS: Walk directories & load summaries
+    FS-->>BE: Return metadata
+    BE-->>User: Render run history list & telemetry charts
+```
+
 ### Key Custom Integration Features
 
 This custom fork introduces several industry-grade additions to the core evaluation suite:
