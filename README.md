@@ -96,44 +96,8 @@ Our added UI code is decoupled from the main benchmark harness and organized fol
 ### System Architecture & Workflow
 
 #### 1. Component Architecture
-```mermaid
-graph TD
-    subgraph Frontend [React Frontend - Port 5173]
-        App[App.jsx Shell] --> UI_Comp[Modular Components]
-        UI_Comp --> TaskPicker[TaskPicker.jsx]
-        UI_Comp --> ModelConfig[ModelConfigPanel.jsx]
-        UI_Comp --> CLIPreview[CLIPreviewCard.jsx]
-        App --> States[Dashboard State]
-    end
+<img width="5700" height="1576" alt="Blank diagram (6)" src="https://github.com/user-attachments/assets/ac76d9a9-258d-447a-a36e-5b41ed26797b" />
 
-    subgraph Backend [FastAPI Backend - Port 8000]
-        API[main.py Entrypoint] --> Routers[Routers]
-        Routers --> EvalRouter[routers/eval.py]
-        Routers --> ResultsRouter[routers/results.py]
-        Routers --> ModelsRouter[routers/models.py]
-        
-        EvalRouter --> ProcSvc[services/process.py - ProcessManager]
-        ResultsRouter --> ResSvc[services/results.py - ResultsService]
-        
-        Config[config.py] -.-> API
-    end
-
-    subgraph Subprocess [Subprocess Execution]
-        ProcSvc -->|Spawn subprocess| Sub[venv/bin/python -m lm_eval]
-        Sub -->|Stream stdout/stderr| ProcSvc
-        Sub -->|Generate results & logs| OutDir[eval_results/run_ID/]
-    end
-
-    subgraph Core_Harness [Core Evaluation Suite]
-        Sub -->|Call model APIs| API_Models[lm_eval/models/api_models.py]
-        API_Models -->|Streaming / HTTP| LLM_Provider[Ollama / OpenAI / HF]
-        API_Models -->|Capture TTFT, ITL, TRT| Telemetry[API_TELEMETRY]
-        Telemetry -->|Written to JSON| OutDir
-    end
-
-    App <-->|HTTP Requests / SSE Logs| API
-    ResSvc -->|Recursive walking & JSONL parse| OutDir
-```
 
 #### 2. Evaluation Lifecycle Flow
 ```mermaid
